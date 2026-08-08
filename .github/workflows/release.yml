@@ -51,7 +51,7 @@ jobs:
           git config --local user.name "GitHub Actions"
           git config --local user.email "actions@github.com"
           git add Cargo.toml Cargo.lock
-          git commit -m "release: v${{ github.event.inputs.version }}"
+          git commit -m "release: v${{ github.event.inputs.version }}" --allow-empty
           git tag ${{ github.event.inputs.version }}
 
           git push origin main
@@ -62,7 +62,7 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.version }}
           body: |
-            `sevenc-nanashi.reset_frame_selection_on_focus-aux2-v${{ github.event.inputs.version }}.au2pkg.zip`をダウンロードし、AviUtl2のプレビューにドラッグ&ドロップしてください。
+            `sevenc-nanashi.create_control_object-aux2-v${{ github.event.inputs.version }}.au2pkg.zip`をダウンロードし、AviUtl2のプレビューにドラッグ&ドロップしてください。
           files: |
-            ./release/sevenc-nanashi.reset_frame_selection_on_focus-aux2-v*.au2pkg.zip
+            ./release/sevenc-nanashi.create_control_object-aux2-v*.au2pkg.zip
             ./release/catalog.json
