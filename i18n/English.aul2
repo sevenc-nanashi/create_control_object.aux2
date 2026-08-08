@@ -1,0 +1,8 @@
+[Language]
+Information=create_control_object.aux2 (English) / https://github.com/sevenc-nanashi/create_control_object.aux2
+
+[Menu]
+選択オブジェクトからグループ制御を作成=Create Group Control from Selected Objects
+選択オブジェクトからグループ制御（音声）を作成=Create Group Control (Audio) from Selected Objects
+選択オブジェクトから時間制御（オブジェクト）を作成=Create Time Control (Object) from Selected Objects
+選択オブジェクトから画像合成（オブジェクト）を作成=Create Image Composite (Object) from Selected Objects

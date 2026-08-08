@@ -1,0 +1,46 @@
+// 設定ファイルについては https://github.com/sevenc-nanashi/aviutl2-cli を参照してください。
+amends "https://raw.githubusercontent.com/sevenc-nanashi/aviutl2-cli/refs/tags/0.10.2/src/AviUtl2CliConfig.pkl"
+
+project {
+  id = "sevenc-nanashi.create_control_object-aux2"
+  name = "create_control_object.aux2"
+  version = "0.1.0"
+}
+
+development {
+  aviutl2_version = "latest"
+}
+
+release {
+  prebuild = "cargo about generate -o release/package.txt about.hbs"
+  package_template = "release/package.txt"
+}
+
+artifacts {
+  ["create_control_object-aux2"] {
+    destination = "Plugin/create_control_object.aux2"
+    profiles {
+      ["debug"] {
+        build = "cargo build"
+        source = "target/debug/create_control_object_aux2.dll"
+      }
+      ["release"] {
+        build = "cargo build --release"
+        source = "target/release/create_control_object_aux2.dll"
+      }
+    }
+  }
+  ["English-create_control_object-aux2-aul2"] {
+    destination = "Language/English.create_control_object-aux2.aul2"
+    source = "i18n/English.aul2"
+  }
+}
+
+catalog {
+  id = "sevenc-nanashi.create_control_object-aux2"
+  download_repo {
+    owner = "sevenc-nanashi"
+    repo = "create_control_object.aux2"
+  }
+  license_path = "./LICENSE"
+}
