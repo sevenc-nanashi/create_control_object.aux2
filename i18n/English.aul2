@@ -3,6 +3,14 @@ Information=create_control_object.aux2 (English) / https://github.com/sevenc-nan
 
 [Menu]
 選択オブジェクトからグループ制御を作成=Create Group Control from Selected Objects
-選択オブジェクトからグループ制御（音声）を作成=Create Group Control (Audio) from Selected Objects
-選択オブジェクトから時間制御（オブジェクト）を作成=Create Time Control (Object) from Selected Objects
-選択オブジェクトから画像合成（オブジェクト）を作成=Create Image Composite (Object) from Selected Objects
+選択オブジェクトからグループ制御(音声)を作成=Create Group Control (Audio) from Selected Objects
+選択オブジェクトからカメラ制御を作成=Create Camera Control from Selected Objects
+選択オブジェクトから時間制御(オブジェクト)を作成=Create Time Control (Object) from Selected Objects
+選択オブジェクトから画像合成(オブジェクト)を作成=Create Image Composite (Object) from Selected Objects
+選択している制御オブジェクトをグループ制御に変換=Convert Selected Control Object to Group Control
+選択している制御オブジェクトをグループ制御(音声)に変換=Convert Selected Control Object to Group Control (Audio)
+選択している制御オブジェクトをカメラ制御に変換=Convert Selected Control Object to Camera Control
+選択している制御オブジェクトを時間制御(オブジェクト)に変換=Convert Selected Control Object to Time Control (Object)
+選択している制御オブジェクトを画像合成(オブジェクト)に変換=Convert Selected Control Object to Image Composite (Object)
+選択している制御オブジェクトの種別を変更=Cycle Selected Control Object Type
+選択している制御オブジェクトの種別を変更（逆順）=Cycle Selected Control Object Type (Reverse)
