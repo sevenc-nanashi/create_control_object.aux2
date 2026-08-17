@@ -1,7 +1,20 @@
-use aviutl2::anyhow;
+use aviutl2::{anyhow, tracing};
+use std::collections::HashMap;
 
 pub static EDIT_HANDLE: aviutl2::generic::GlobalEditHandle =
     aviutl2::generic::GlobalEditHandle::new();
+
+enum CycleState {
+    None,
+    WaitingExpectedEdit {
+        objects: HashMap<aviutl2::generic::ObjectHandle, aviutl2::alias::Table>,
+    },
+    PossiblyNextEdit {
+        objects: HashMap<aviutl2::generic::ObjectHandle, aviutl2::alias::Table>,
+    },
+}
+
+static CYCLE_STATE: std::sync::Mutex<CycleState> = std::sync::Mutex::new(CycleState::None);
 
 #[aviutl2::plugin(GenericPlugin)]
 struct CreateControlObjectAux2;
@@ -16,6 +29,15 @@ static CONTROL_OBJECTS: &[&str] = &[
 
 impl aviutl2::generic::GenericPlugin for CreateControlObjectAux2 {
     fn new(_info: aviutl2::common::AviUtl2Info) -> aviutl2::common::AnyResult<Self> {
+        aviutl2::tracing_subscriber::fmt()
+            .with_max_level(if cfg!(debug_assertions) {
+                aviutl2::tracing::Level::DEBUG
+            } else {
+                aviutl2::tracing::Level::INFO
+            })
+            .event_format(aviutl2::logger::AviUtl2Formatter)
+            .with_writer(aviutl2::logger::AviUtl2LogWriter)
+            .init();
         Ok(Self)
     }
 
@@ -80,6 +102,22 @@ impl aviutl2::generic::GenericPlugin for CreateControlObjectAux2 {
         registry.register_edit_menu(reverse_control_object_type, || {
             play_beep_if_error(&CreateControlObjectAux2::cycle_control_object_type(-1));
         });
+    }
+    fn event_update_object_info(&mut self) {
+        let mut state = CYCLE_STATE.lock().unwrap();
+        match &*state {
+            CycleState::WaitingExpectedEdit { objects } => {
+                tracing::debug!("WaitingExpectedEdit -> PossiblyNextEdit");
+                *state = CycleState::PossiblyNextEdit {
+                    objects: objects.clone(),
+                };
+            }
+            CycleState::PossiblyNextEdit { .. } => {
+                tracing::debug!("PossiblyNextEdit -> None");
+                *state = CycleState::None;
+            }
+            _ => {}
+        }
     }
 }
 
@@ -153,22 +191,28 @@ impl CreateControlObjectAux2 {
                 }
             }
 
-            let mut success_count = 0;
+            let mut object_states = HashMap::new();
             for obj in selected_objects {
                 let front_effect = e.get_effect_name(e.get_first_effect(obj)?)?;
                 if CONTROL_OBJECTS.contains(&front_effect.as_str()) && front_effect != effect_name {
                     let is_focused = Some(obj) == focused_object;
-                    let new_handle = Self::convert_control_object_type(e, obj, effect_name)?;
+                    let (new_handle, original_table) =
+                        Self::convert_control_object_type(e, obj, effect_name)?;
                     if is_focused {
                         e.set_focus_object(Some(new_handle))?;
                     }
-                    success_count += 1;
+                    object_states.insert(new_handle, original_table);
                 }
             }
 
-            if success_count == 0 {
+            if object_states.is_empty() {
                 anyhow::bail!("No control objects were converted.");
             }
+
+            let mut state = CYCLE_STATE.lock().unwrap();
+            *state = CycleState::WaitingExpectedEdit {
+                objects: object_states,
+            };
 
             anyhow::Ok(())
         })?
@@ -186,7 +230,7 @@ impl CreateControlObjectAux2 {
                 }
             }
 
-            let mut success_count = 0;
+            let mut object_states = HashMap::new();
             for obj in selected_objects {
                 let front_effect = e.get_effect_name(e.get_first_effect(obj)?)?;
                 if CONTROL_OBJECTS.contains(&front_effect.as_str()) {
@@ -199,17 +243,23 @@ impl CreateControlObjectAux2 {
                         as usize;
                     let new_effect_name = CONTROL_OBJECTS[new_index];
                     let is_focused = Some(obj) == focused_object;
-                    let new_handle = Self::convert_control_object_type(e, obj, new_effect_name)?;
+                    let (new_handle, original_table) =
+                        Self::convert_control_object_type(e, obj, new_effect_name)?;
                     if is_focused {
                         e.set_focus_object(Some(new_handle))?;
                     }
-                    success_count += 1;
+                    object_states.insert(new_handle, original_table);
                 }
             }
 
-            if success_count == 0 {
+            if object_states.is_empty() {
                 anyhow::bail!("No control objects were converted.");
             }
+
+            let mut state = CYCLE_STATE.lock().unwrap();
+            *state = CycleState::WaitingExpectedEdit {
+                objects: object_states,
+            };
 
             anyhow::Ok(())
         })?
@@ -219,8 +269,22 @@ impl CreateControlObjectAux2 {
         edit: &mut aviutl2::generic::EditSection,
         obj: aviutl2::generic::ObjectHandle,
         new_effect_name: &str,
-    ) -> aviutl2::common::AnyResult<aviutl2::generic::ObjectHandle> {
-        let original_alias = edit.get_object_alias_parsed(obj)?;
+    ) -> aviutl2::common::AnyResult<(aviutl2::generic::ObjectHandle, aviutl2::alias::Table)> {
+        let original_alias = {
+            let state = CYCLE_STATE.lock().unwrap();
+            if let CycleState::PossiblyNextEdit { objects } = &*state
+                && let Some(alias) = objects.get(&obj)
+            {
+                tracing::debug!(
+                    "Continuing with previously stored alias for object {:?}",
+                    obj
+                );
+                alias.clone()
+            } else {
+                edit.get_object_alias_parsed(obj)?
+            }
+        };
+
         let mut alias = original_alias.clone();
         let object_0 = alias
             .get_table_mut("Object.0")
@@ -230,7 +294,9 @@ impl CreateControlObjectAux2 {
             .ok_or_else(|| anyhow::anyhow!("effect.name not found in Object.0"))?
             .to_owned();
         object_0.insert_value("effect.name", &new_effect_name);
-        if old_effect_name == "画像合成(オブジェクト)" {
+        if old_effect_name == "画像合成(オブジェクト)"
+            && new_effect_name != "画像合成(オブジェクト)"
+        {
             // 画像合成(オブジェクト)は出力エフェクトがあるので、それがなくなる分を詰める
             let object_1 = alias
                 .get_table("Object.1")
@@ -255,7 +321,9 @@ impl CreateControlObjectAux2 {
                 }
                 object_0.insert_value(key, value);
             }
-        } else if new_effect_name == "画像合成(オブジェクト)" {
+        } else if old_effect_name != "画像合成(オブジェクト)"
+            && new_effect_name == "画像合成(オブジェクト)"
+        {
             // 画像合成(オブジェクト)は出力エフェクトがあるので、それに座標とかを引き継ぐ
             let mut object_0 = alias
                 .get_table("Object.0")
@@ -282,7 +350,7 @@ impl CreateControlObjectAux2 {
         match new_object {
             Ok(new_obj) => {
                 edit.delete_object(obj)?;
-                Ok(new_obj)
+                Ok((new_obj, original_alias))
             }
             Err(err) => {
                 edit.move_object(obj, position.layer, position.start)?;
