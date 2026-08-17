@@ -8,5 +8,6 @@ crate-type = ["cdylib"]
 name = "create_control_object_aux2"
 
 [dependencies]
-aviutl2 = "0.42.0"
-aviutl2-eframe = "0.42.0"
+aviutl2 = "0.44.0"
+aviutl2-eframe = "0.44.0"
+windows = { version = "0.62.2", features = ["Win32_System_Diagnostics_Debug", "Win32_UI_WindowsAndMessaging"] }

@@ -4,6 +4,8 @@
 
 選択オブジェクトからグループ制御系のオブジェクトを作成するAviUtl2の汎用プラグイン。
 
+既存の制御オブジェクトから別の制御オブジェクトに変換することも可能です。
+
 ## インストール
 
 [Releases](https://github.com/sevenc-nanashi/create_control_object.aux2/releases/latest)から`sevenc-nanashi.create_control_object-aux2-v<バージョン>.au2pkg.zip`をダウンロードし、AviUtl2のプレビューにドラッグ&ドロップしてください。
