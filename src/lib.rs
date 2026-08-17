@@ -64,7 +64,8 @@ impl aviutl2::generic::GenericPlugin for CreateControlObjectAux2 {
                 ));
             });
         }
-        let cycle_control_object_type = "create_control_object.aux2\\制御オブジェクトの種別を変更";
+        let cycle_control_object_type =
+            "create_control_object.aux2\\選択している制御オブジェクトの種別を変更";
         registry.register_object_menu(cycle_control_object_type, || {
             play_beep_if_error(&CreateControlObjectAux2::cycle_control_object_type(1));
         });
@@ -72,7 +73,7 @@ impl aviutl2::generic::GenericPlugin for CreateControlObjectAux2 {
             play_beep_if_error(&CreateControlObjectAux2::cycle_control_object_type(1));
         });
         let reverse_control_object_type =
-            "create_control_object.aux2\\制御オブジェクトの種別を変更（逆順）";
+            "create_control_object.aux2\\選択している制御オブジェクトの種別を変更（逆順）";
         registry.register_object_menu(reverse_control_object_type, || {
             play_beep_if_error(&CreateControlObjectAux2::cycle_control_object_type(-1));
         });
