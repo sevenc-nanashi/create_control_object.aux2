@@ -139,9 +139,13 @@ fn play_beep() {
 impl CreateControlObjectAux2 {
     fn create_control(effect_name: &str) -> aviutl2::common::AnyResult<()> {
         EDIT_HANDLE.call_edit_section(|e| {
-            let selected_objects = e.get_selected_objects()?;
+            let mut selected_objects = e.get_selected_objects()?;
             if selected_objects.is_empty() {
-                anyhow::bail!("No objects selected.");
+                if let Some(focused_object) = e.get_focused_object()? {
+                    selected_objects.push(focused_object);
+                } else {
+                    anyhow::bail!("No objects selected.");
+                }
             }
 
             let positions = selected_objects
