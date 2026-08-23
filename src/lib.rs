@@ -1,3 +1,6 @@
+mod config;
+mod config_dialog;
+
 use aviutl2::{anyhow, tracing};
 use std::collections::HashMap;
 
@@ -15,6 +18,16 @@ enum CycleState {
 }
 
 static CYCLE_STATE: std::sync::Mutex<CycleState> = std::sync::Mutex::new(CycleState::None);
+static SETTINGS: std::sync::OnceLock<std::sync::Arc<std::sync::RwLock<config::Settings>>> =
+    std::sync::OnceLock::new();
+static EFFECTS: std::sync::LazyLock<std::collections::HashMap<String, aviutl2::generic::Effect>> =
+    std::sync::LazyLock::new(|| {
+        let mut effects = std::collections::HashMap::new();
+        for effect in EDIT_HANDLE.get_effects() {
+            effects.insert(effect.name.clone(), effect);
+        }
+        effects
+    });
 
 #[aviutl2::plugin(GenericPlugin)]
 struct CreateControlObjectAux2;
@@ -27,6 +40,46 @@ static CONTROL_OBJECTS: &[&str] = &[
     "画像合成(オブジェクト)",
 ];
 
+fn get_compatible_flags(effect_name: &str) -> Option<aviutl2::generic::EffectFlag> {
+    match effect_name {
+        "グループ制御" => Some(aviutl2::bitflag!(aviutl2::generic::EffectFlag {
+            video: true,
+            audio: false,
+            as_filter: false,
+            camera: false,
+        })),
+        "グループ制御(音声)" => Some(aviutl2::bitflag!(aviutl2::generic::EffectFlag {
+            video: false,
+            audio: true,
+            as_filter: false,
+            camera: false,
+        })),
+        "カメラ制御" => Some(aviutl2::bitflag!(aviutl2::generic::EffectFlag {
+            video: false,
+            audio: false,
+            as_filter: false,
+            camera: true,
+        })),
+        "時間制御(オブジェクト)" => {
+            Some(aviutl2::bitflag!(aviutl2::generic::EffectFlag {
+                video: false,
+                audio: false,
+                as_filter: false,
+                camera: false,
+            }))
+        }
+        "画像合成(オブジェクト)" => {
+            Some(aviutl2::bitflag!(aviutl2::generic::EffectFlag {
+                video: true,
+                audio: false,
+                as_filter: true,
+                camera: false,
+            }))
+        }
+        _ => None,
+    }
+}
+
 impl aviutl2::generic::GenericPlugin for CreateControlObjectAux2 {
     fn new(_info: aviutl2::common::AviUtl2Info) -> aviutl2::common::AnyResult<Self> {
         aviutl2::tracing_subscriber::fmt()
@@ -38,6 +91,11 @@ impl aviutl2::generic::GenericPlugin for CreateControlObjectAux2 {
             .event_format(aviutl2::logger::AviUtl2Formatter)
             .with_writer(aviutl2::logger::AviUtl2LogWriter)
             .init();
+
+        let settings = config::Settings::load()?;
+        SETTINGS
+            .set(std::sync::Arc::new(std::sync::RwLock::new(settings)))
+            .map_err(|_| anyhow::anyhow!("Settings must only be initialized once."))?;
         Ok(Self)
     }
 
@@ -53,6 +111,7 @@ impl aviutl2::generic::GenericPlugin for CreateControlObjectAux2 {
 
     fn register(&mut self, registry: &mut aviutl2::generic::HostAppHandle) {
         EDIT_HANDLE.init(registry.create_edit_handle());
+        registry.register_menus::<Self>();
         for &control_object in CONTROL_OBJECTS {
             let create_from_selected = format!(
                 "create_control_object.aux2\\選択オブジェクトから{}を作成",
@@ -118,6 +177,18 @@ impl aviutl2::generic::GenericPlugin for CreateControlObjectAux2 {
             }
             _ => {}
         }
+    }
+}
+
+#[aviutl2::generic::menus]
+impl CreateControlObjectAux2 {
+    #[config(name = "create_control_object.aux2 設定")]
+    fn show_config(parent: aviutl2::Win32WindowHandle) -> aviutl2::common::AnyResult<()> {
+        let settings = SETTINGS
+            .get()
+            .expect("Settings must be initialized before opening the config dialog.")
+            .clone();
+        config_dialog::show(parent, settings)
     }
 }
 
@@ -238,21 +309,60 @@ impl CreateControlObjectAux2 {
             for obj in selected_objects {
                 let front_effect = e.get_effect_name(e.get_first_effect(obj)?)?;
                 if CONTROL_OBJECTS.contains(&front_effect.as_str()) {
-                    let current_index = CONTROL_OBJECTS
+                    let is_focused = Some(obj) == focused_object;
+                    let index = CONTROL_OBJECTS
                         .iter()
                         .position(|&name| name == front_effect)
                         .unwrap();
-                    let new_index = (current_index as i32 + direction)
-                        .rem_euclid(CONTROL_OBJECTS.len() as i32)
-                        as usize;
-                    let new_effect_name = CONTROL_OBJECTS[new_index];
-                    let is_focused = Some(obj) == focused_object;
-                    let (new_handle, original_table) =
-                        Self::convert_control_object_type(e, obj, new_effect_name)?;
-                    if is_focused {
-                        e.set_focus_object(Some(new_handle))?;
+                    let mut candidates = CONTROL_OBJECTS.to_vec();
+                    candidates.rotate_left(index + 1);
+                    if direction < 0 {
+                        candidates.reverse();
                     }
-                    object_states.insert(new_handle, original_table);
+                    candidates.pop();
+
+                    if SETTINGS
+                        .get()
+                        .unwrap()
+                        .read()
+                        .unwrap()
+                        .incompatible_effect_handling
+                        == crate::config::IncompatibleEffectHandling::RemoveIncompatibleEffects
+                    {
+                        candidates = vec![candidates.first().unwrap()];
+                    }
+
+                    tracing::debug!("Cycling control object type for object {:?}", obj,);
+
+                    let mut success = false;
+                    for &new_effect_name in &candidates {
+                        let (new_handle, original_table) =
+                            match Self::convert_control_object_type(e, obj, new_effect_name) {
+                                Ok(result) => result,
+                                Err(err) => {
+                                    tracing::warn!(
+                                        "Failed to convert object {:?} to {}: {:?}",
+                                        obj,
+                                        new_effect_name,
+                                        err
+                                    );
+                                    continue;
+                                }
+                            };
+                        if is_focused {
+                            e.set_focus_object(Some(new_handle))?;
+                        }
+                        object_states.insert(new_handle, original_table);
+                        success = true;
+                        break;
+                    }
+
+                    if !success {
+                        anyhow::bail!(
+                            "Failed to convert object {:?} to any compatible control object type.",
+                            obj
+                        );
+                    }
                 }
             }
 
@@ -290,76 +400,114 @@ impl CreateControlObjectAux2 {
         };
 
         let mut alias = original_alias.clone();
-        let object_0 = alias
-            .get_table_mut("Object.0")
-            .ok_or_else(|| anyhow::anyhow!("Object.0 table not found"))?;
-        let old_effect_name = object_0
+        let mut objects = (0..)
+            .map_while(|i| {
+                let table_name = format!("Object.{}", i);
+                if let Some(table) = alias.get_table(&table_name).cloned() {
+                    alias.remove_table(&table_name);
+                    Some(table)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let old_effect_name = objects[0]
             .get_value("effect.name")
             .ok_or_else(|| anyhow::anyhow!("effect.name not found in Object.0"))?
             .to_owned();
-        object_0.insert_value("effect.name", &new_effect_name);
         if old_effect_name == "画像合成(オブジェクト)"
             && new_effect_name != "画像合成(オブジェクト)"
         {
-            // 画像合成(オブジェクト)は出力エフェクトがあるので、それがなくなる分を詰める
-            let object_1 = alias
-                .get_table("Object.1")
-                .ok_or_else(|| anyhow::anyhow!("Object.1 table not found"))?
-                .clone();
-            for i in 2.. {
-                let table_name = format!("Object.{}", i);
-                if let Some(table) = alias.get_table(&table_name) {
-                    alias.insert_table(&format!("Object.{}", i - 1), table.clone());
-                } else {
-                    alias.remove_table(&format!("Object.{}", i - 1));
-                    break;
+            // 画像合成(オブジェクト)は出力エフェクトがあるので、そこからパラメーターをObject.0に引き継ぐ
+            let output_effect_table_index = objects
+                .iter()
+                .position(|table| {
+                    table
+                        .get_value("effect.name")
+                        .map(|name| {
+                            EFFECTS.get(name).unwrap().effect_type
+                                == aviutl2::generic::EffectType::Output
+                        })
+                        .unwrap_or(false)
+                })
+                .ok_or_else(|| anyhow::anyhow!("Output effect table not found"))?;
+            let output_effect_table = objects.remove(output_effect_table_index);
+            let object_0 = objects.get_mut(0).unwrap();
+            for (key, value) in output_effect_table.values() {
+                if key != "effect.name" {
+                    object_0.insert_value(key, value);
                 }
             }
-            let object_0 = alias
-                .get_table_mut("Object.0")
-                .ok_or_else(|| anyhow::anyhow!("Object.0 table not found"))?;
-            // 座標とかをグループ制御に引き継ぐ
-            for (key, value) in object_1.values() {
-                if key == "effect.name" {
-                    continue;
-                }
-                object_0.insert_value(key, value);
-            }
+            object_0.insert_value("effect.name", &new_effect_name);
         } else if old_effect_name != "画像合成(オブジェクト)"
             && new_effect_name == "画像合成(オブジェクト)"
         {
             // 画像合成(オブジェクト)は出力エフェクトがあるので、それに座標とかを引き継ぐ
-            let mut object_0 = alias
-                .get_table("Object.0")
-                .ok_or_else(|| anyhow::anyhow!("Object.0 table not found"))?
-                .clone();
-            object_0.insert_value("effect.name", "標準描画");
-            let next_table = (0..)
-                .find(|i| {
-                    let table_name = format!("Object.{}", i);
-                    alias.get_table(&table_name).is_none()
-                })
-                .expect("There should be a free table index");
-            alias.insert_table(&format!("Object.{}", next_table), object_0);
+            let object_0 = objects.get_mut(0).unwrap();
+            object_0.insert_value("effect.name", &new_effect_name);
+            let mut new_object_0 = object_0.clone();
+            new_object_0.insert_value("effect.name", "標準描画");
+            objects.push(new_object_0);
+        } else {
+            let object_0 = objects.get_mut(0).unwrap();
+            object_0.insert_value("effect.name", &new_effect_name);
+        }
+
+        if SETTINGS
+            .get()
+            .unwrap()
+            .read()
+            .unwrap()
+            .incompatible_effect_handling
+            == crate::config::IncompatibleEffectHandling::RemoveIncompatibleEffects
+        {
+            let compatible_flags = get_compatible_flags(new_effect_name)
+                .ok_or_else(|| anyhow::anyhow!("Unknown effect name: {}", new_effect_name))?;
+            objects.retain(|table| {
+                let effect_name = table.get_value("effect.name");
+                if effect_name.map(|n| n.as_str()) == Some(new_effect_name) {
+                    return true;
+                }
+                if let Some(effect_name) = effect_name
+                    && let Some(effect) = EFFECTS.get(effect_name)
+                {
+                    let mut effect_flag = effect.flag;
+                    effect_flag.as_filter = false;
+
+                    if compatible_flags.to_bits() & effect_flag.to_bits() == 0 {
+                        tracing::debug!(
+                            "Removing incompatible effect {} for new effect {}",
+                            effect_name,
+                            new_effect_name
+                        );
+                        return false;
+                    }
+                }
+                true
+            });
+        }
+
+        for (i, table) in objects.into_iter().enumerate() {
+            let table_name = format!("Object.{}", i);
+            alias.insert_table(&table_name, table);
         }
 
         let position = edit.get_object_layer_frame(obj)?;
-        edit.move_object(obj, edit.info.layer_max + 1, 0)?;
+        // edit.move_object(obj, edit.info.layer_max + 1, 0)?;
         let new_object = edit.create_object_from_alias(
             &alias.to_string(),
-            position.layer,
+            edit.info.layer_max + 1,
             position.start,
             position.end - position.start + 1,
         );
         match new_object {
             Ok(new_obj) => {
                 edit.delete_object(obj)?;
+                edit.move_object(new_obj, position.layer, position.start)?;
                 Ok((new_obj, original_alias))
             }
-            Err(err) => {
-                edit.move_object(obj, position.layer, position.start)?;
-                Err(err.into())
-            }
+            Err(err) => Err(err.into()),
         }
     }
 }

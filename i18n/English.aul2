@@ -2,6 +2,7 @@
 Information=create_control_object.aux2 (English) / https://github.com/sevenc-nanashi/create_control_object.aux2
 
 [Menu]
+create_control_object.aux2 設定=create_control_object.aux2 Settings
 選択オブジェクトからグループ制御を作成=Create Group Control from Selected Objects
 選択オブジェクトからグループ制御(音声)を作成=Create Group Control (Audio) from Selected Objects
 選択オブジェクトからカメラ制御を作成=Create Camera Control from Selected Objects
@@ -14,3 +15,11 @@ Information=create_control_object.aux2 (English) / https://github.com/sevenc-nan
 選択している制御オブジェクトを画像合成(オブジェクト)に変換=Convert Selected Control Object to Image Composite (Object)
 選択している制御オブジェクトの種別を変更=Cycle Selected Control Object Type
 選択している制御オブジェクトの種別を変更（逆順）=Cycle Selected Control Object Type (Reverse)
+
+[create_control_object.aux2]
+create_control_object.aux2 設定=create_control_object.aux2 Settings
+変換時に非互換のエフェクトをどうするか=How to handle incompatible effects during conversion
+非互換のエフェクトを削除=Remove incompatible effects
+変換できるオブジェクトまでスキップ=Skip to a convertible object
+キャンセル=Cancel
+設定を保存できません=Could not save settings
