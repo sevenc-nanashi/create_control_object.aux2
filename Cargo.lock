@@ -111,7 +111,7 @@ dependencies = [
 
 [[package]]
 name = "create_control_object-aux2"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "aviutl2",
  "process_path",
