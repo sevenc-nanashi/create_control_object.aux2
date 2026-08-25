@@ -3,6 +3,7 @@
 [![AviUtl2 Catalog](https://img.shields.io/endpoint?url=https%3A%2F%2Faviutl2-catalog-badge.sevenc7c.workers.dev%2Fapi%2Fbadge%2Fsevenc-nanashi.create_control_object-aux2)](https://a2cw.sevenc7c.com/package/sevenc-nanashi.create_control_object-aux2)
 
 選択オブジェクトからグループ制御系のオブジェクトを作成するAviUtl2の汎用プラグイン。
+選択オブジェクトを含むような制御オブジェクトの作成だけでなく、制御オブジェクト同士の相互変換も可能です。
 
 ## インストール
 
